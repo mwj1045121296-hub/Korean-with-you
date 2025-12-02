@@ -1,0 +1,281 @@
+import React, { useState, useRef, useEffect } from 'react';
+import { Send, Volume2, BookOpen, RotateCcw } from 'lucide-react';
+
+export default function KoreanPractice() {
+  const [messages, setMessages] = useState([
+    { 
+      role: 'assistant', 
+      content: '안녕하세요! 저는 한국어 연습을 도와드릴 AI입니다. 한국어로 자유롭게 대화해보세요!',
+      translation: '你好! 我是帮助你练习韩语的AI。请随意用韩语对话!'
+    }
+  ]);
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [showTranslation, setShowTranslation] = useState(true);
+  const messagesEndRef = useRef(null);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  const handleSend = async () => {
+    if (!input.trim() || loading) return;
+
+    const userMessage = input.trim();
+    setInput('');
+    setMessages(prev => [...prev, { role: 'user', content: userMessage }]);
+    setLoading(true);
+
+    try {
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 1000,
+          messages: [
+            {
+              role: 'user',
+              content: `你是一个韩语对话练习助手。用户会用韩语和你对话，请你:
+1. 首先指出用户韩语中的错误(如果有的话)，用中文解释错误原因
+2. 如果有错误，提供正确的说法
+3. 然后用自然的韩语回应用户，继续对话
+4. 最后提供你回复的中文翻译
+
+用户说: "${userMessage}"
+
+请按以下JSON格式回复(只输出JSON，不要有其他内容):
+{
+  "hasError": true/false,
+  "correction": "错误纠正的中文说明(如果有错误)",
+  "correctForm": "正确的韩语表达(如果有错误)",
+  "response": "你的韩语回复",
+  "translation": "你回复的中文翻译"}`
+            }
+          ]
+        })
+      });
+
+      const data = await response.json();
+      const content = data.content[0].text;
+      
+      let parsed;
+      try {
+        const cleanContent = content.replace(/```json\n?|\n?```/g, '').trim();
+        parsed = JSON.parse(cleanContent);
+      } catch (e) {
+        parsed = {
+          hasError: false,
+          response: content,
+          translation: '(解析错误，请重试)'
+        };
+      }
+
+      const assistantMessages = [];
+      
+      if (parsed.hasError && parsed.correction) {
+        assistantMessages.push({
+          role: 'assistant',
+          content: parsed.correction,
+          isCorrection: true,
+          correctForm: parsed.correctForm
+        });
+      }
+
+      assistantMessages.push({
+        role: 'assistant',
+        content: parsed.response,
+        translation: parsed.translation
+      });
+
+      setMessages(prev => [...prev, ...assistantMessages]);
+    } catch (error) {
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: '抱歉，发生了错误。请重试。',
+        isError: true
+      }]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleReset = () => {
+    setMessages([
+      { 
+        role: 'assistant', 
+        content: '안녕하세요! 저는 한국어 연습을 도와드릴 AI입니다. 한국어로 자유롭게 대화해보세요!',
+        translation: '你好! 我是帮助你练习韩语的AI。请随意用韩语对话!'
+      }
+    ]);
+  };
+
+  const speak = (text) => {
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'ko-KR';
+    utterance.rate = 0.9;
+    speechSynthesis.speak(utterance);
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
+      <div className="max-w-4xl mx-auto">
+        <div className="bg-white rounded-lg shadow-xl overflow-hidden">
+          {/* Header */}
+          <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-6 text-white">
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-3xl font-bold mb-2">한국어 대화 연습</h1>
+                <p className="text-blue-100">韩语对话练习 - 与AI练习韩语对话</p>
+              </div>
+              <BookOpen className="w-12 h-12 opacity-80" />
+            </div>
+            <div className="mt-4 flex items-center gap-4">
+              <button
+                onClick={() => setShowTranslation(!showTranslation)}
+                className="px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg text-sm transition-colors"
+              >
+                {showTranslation ? '隐藏翻译' : '显示翻译'}
+              </button>
+              <button
+                onClick={handleReset}
+                className="px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg text-sm transition-colors flex items-center gap-2"
+              >
+                <RotateCcw className="w-4 h-4" />
+                重新开始
+              </button>
+            </div>
+          </div>
+
+          {/* Messages */}
+          <div className="h-[500px] overflow-y-auto p-6 space-y-4 bg-gray-50">
+            {messages.map((msg, idx) => (
+              <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div className={`max-w-[80%] ${msg.role === 'user' ? 'order-2' : 'order-1'}`}>
+                  {msg.isCorrection ? (
+                    <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-lg">
+                      <div className="flex items-start gap-2">
+                        <span className="text-yellow-600 font-semibold text-sm">纠正：</span>
+                        <div className="flex-1">
+                          <p className="text-gray-700 text-sm mb-2">{msg.content}</p>
+                          {msg.correctForm && (
+                            <div className="bg-white p-2 rounded mt-2">
+                              <p className="text-green-600 font-medium text-sm">正确说法：</p>
+                              <p className="text-gray-800">{msg.correctForm}</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div
+                      className={`rounded-lg p-4 ${
+                        msg.role === 'user'
+                          ? 'bg-blue-600 text-white'
+                          : msg.isError
+                          ? 'bg-red-50 text-red-700'
+                          : 'bg-white border border-gray-200'
+                      }`}
+                    >
+                      <div className="flex items-start gap-2">
+                        <p className={`flex-1 ${msg.role === 'user' ? 'text-white' : 'text-gray-800'}`}>
+                          {msg.content}
+                        </p>
+                        {msg.role === 'assistant' && !msg.isError && (
+                          <button
+                            onClick={() => speak(msg.content)}
+                            className="text-blue-600 hover:text-blue-700 transition-colors flex-shrink-0"
+                          >
+                            <Volume2 className="w-5 h-5" />
+                          </button>
+                        )}
+                      </div>
+                      {msg.translation && showTranslation && (
+                        <p className={`text-sm mt-2 pt-2 border-t ${
+                          msg.role === 'user' 
+                            ? 'border-blue-400 text-blue-100' 
+                            : 'border-gray-200 text-gray-500'
+                        }`}>
+                          {msg.translation}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+            {loading && (
+              <div className="flex justify-start">
+                <div className="bg-white border border-gray-200 rounded-lg p-4">
+                  <div className="flex gap-2">
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+                  </div>
+                </div>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+
+          {/* Input */}
+          <div className="p-4 bg-white border-t border-gray-200">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && handleSend()}
+                placeholder="用韩语输入你的消息..."
+                className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                disabled={loading}
+              />
+              <button
+                onClick={handleSend}
+                disabled={loading || !input.trim()}
+                className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+              >
+                <Send className="w-5 h-5" />
+                发送
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 mt-2">
+              💡 提示：尝试用韩语介绍自己、询问问题或进行日常对话
+            </p>
+          </div>
+        </div>
+
+        {/* Quick Phrases */}
+        <div className="mt-6 bg-white rounded-lg shadow-lg p-6">
+          <h3 className="text-lg font-semibold text-gray-800 mb-4">常用短语参考</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {[
+              { ko: '안녕하세요', cn: '你好' },
+              { ko: '저는 [이름]입니다', cn: '我是[名字]' },
+              { ko: '만나서 반갑습니다', cn: '很高兴见到你' },
+              { ko: '어떻게 지내세요?', cn: '你好吗？' },
+              { ko: '감사합니다', cn: '谢谢' },
+              { ko: '죄송합니다', cn: '对不起' },
+            ].map((phrase, idx) => (
+              <button
+                key={idx}
+                onClick={() => setInput(phrase.ko)}
+                className="text-left p-3 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors border border-gray-200"
+              >
+                <p className="font-medium text-gray-800">{phrase.ko}</p>
+                <p className="text-sm text-gray-500">{phrase.cn}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
